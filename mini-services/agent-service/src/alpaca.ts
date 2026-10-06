@@ -161,19 +161,19 @@ class RealAlpacaClient {
       keyId: cfg.key,
       secret: cfg.secret,
       paper: cfg.paper,
-    } as any)
+    })
   }
 
   async getAccount(): Promise<PortfolioSummary> {
-    const account: any = await this.client.trading.account.getAccount()
+    const account = await this.client.trading.account.getAccount()
     const equity = Number(account.equity ?? 0)
-    const lastEquity = Number(account.last_equity ?? equity)
+    const lastEquity = Number(account.lastEquity ?? equity)
     return {
       equity,
       cash: Number(account.cash ?? 0),
-      buyingPower: Number(account.buying_power ?? 0),
-      longMarketValue: Number(account.long_market_value ?? 0),
-      shortMarketValue: Number(account.short_market_value ?? 0),
+      buyingPower: Number(account.buyingPower ?? 0),
+      longMarketValue: Number(account.longMarketValue ?? 0),
+      shortMarketValue: Number(account.shortMarketValue ?? 0),
       lastEquity,
       dailyPnl: equity - lastEquity,
       dailyPnlPct: lastEquity > 0 ? (equity / lastEquity - 1) * 100 : 0,
@@ -182,18 +182,17 @@ class RealAlpacaClient {
   }
 
   async getPositions(): Promise<AlpacaPosition[]> {
-    const positions: any[] = await this.client.trading.positions.getAllOpenPositions()
-    // Alpaca SDK v4 returns camelCase fields (currentPrice, marketValue, avgEntryPrice)
-    // but REST responses use snake_case — accept both for safety.
-    return positions.map((p: any) => ({
+    const positions = await this.client.trading.positions.getAllOpenPositions()
+    // SDK v4 models are camelCase (avgEntryPrice, currentPrice, unrealizedPl).
+    return positions.map((p) => ({
       symbol: p.symbol,
       qty: Number(p.qty),
       side: p.side,
-      avgEntryPrice: Number(p.avgEntryPrice ?? p.avg_entry_price ?? 0),
-      currentPrice: Number(p.currentPrice ?? p.current_price ?? 0),
-      marketValue: Number(p.marketValue ?? p.market_value ?? 0),
-      unrealizedPnl: Number(p.unrealizedPl ?? p.unrealized_pl ?? 0),
-      unrealizedPnlPct: Number(p.unrealizedPlpc ?? p.unrealized_plpc ?? 0) * 100,
+      avgEntryPrice: Number(p.avgEntryPrice ?? 0),
+      currentPrice: Number(p.currentPrice ?? 0),
+      marketValue: Number(p.marketValue ?? 0),
+      unrealizedPnl: Number(p.unrealizedPl ?? 0),
+      unrealizedPnlPct: Number(p.unrealizedPlpc ?? 0) * 100,
     }))
   }
 
@@ -205,22 +204,23 @@ class RealAlpacaClient {
     // Use the ergonomic `market` helper. Note: Alpaca paper only fills market
     // orders during market hours (9:30–16:00 ET, Mon–Fri). When the market is
     // closed the order will be accepted (status='new') and fill on next open.
-    // We submit with `time_in_force: 'day'` so unfilled orders auto-cancel at
+    // We submit with `timeInForce: 'day'` so unfilled orders auto-cancel at
     // market close — paper account never accumulates stale orders.
-    const order: any = await this.client.trading.orders.market({
+    const order = await this.client.trading.orders.market({
       symbol,
       qty,
       side,
-      timeInForce: 'day' as any,
+      timeInForce: 'day',
       clientOrderId: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    } as any)
+    })
     const id = order.id ?? 'unknown'
     const status = order.status ?? 'new'
 
-    // If accepted but not filled, fetch the latest status once more
+    // If accepted but not filled, fetch the latest status once more.
+    // v4 names this getOrderByOrderID (there is no getOrder).
     if (status === 'new' || status === 'pending_new' || status === 'accepted') {
       try {
-        const refreshed: any = await this.client.trading.orders.getOrder({ orderId: id })
+        const refreshed = await this.client.trading.orders.getOrderByOrderID({ orderId: id })
         return { id, status: refreshed.status ?? status }
       } catch {
         // Ignore — return the original status
@@ -230,8 +230,8 @@ class RealAlpacaClient {
   }
 
   async closePosition(symbol: string): Promise<void> {
-    // v4 SDK exposes `closePosition` via the trading.positions namespace
-    await (this.client.trading.positions as any).closePosition({ symbol })
+    // v4 closes a position via DELETE /v2/positions/{symbol_or_asset_id}.
+    await this.client.trading.positions.deleteOpenPosition({ symbolOrAssetId: symbol })
   }
 }
 
