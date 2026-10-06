@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Prisma schema requires DATABASE_URL. The SQLite file is already in the repo.
+      DATABASE_URL: file:./db/custom.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # Bun does not run dependency lifecycle scripts unless they are trusted,
+      # so @prisma/client's postinstall does not generate the client.
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Build
+        run: bun run build
